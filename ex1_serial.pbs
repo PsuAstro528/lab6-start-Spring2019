@@ -1,0 +1,23 @@
+#!/bin/bash
+#PBS -A open                 ## Submit job to "Open" allocation
+##PBS -A cyberlamp_class     ## These 2 lines are commented out and will have no effect
+##PBS -l qos=cl_class        ##   but could replace -A open to request using CyberLAMP
+##PBS -l qos=cl_debug        ## TODO: Check if students have access to cl_debug
+#PBS -l walltime=00:05:00    ## Time requested: 0 hours, 5 minutes, 0 seconds
+#PBS -l nodes=1:ppn=1        ## Ask for one core on one node
+#PBS -l pmem=1gb             ## Each processors will use no more than 1GB of RAM
+#PBS -j oe                   ## combine STDOUT and STDERR into one file
+#PBS -m abe                  ## Ask for emails when jobs begins, ends or aborts
+#PBS -M nobody@psu.edu       ## replace with your email
+#PBS -N Ast528Lab6Ex1        ## Specifices job name, so easy to find in qstat
+
+echo "Starting job $PBS_JOBNAME"
+date
+echo "Job id: $PBS_JOBID"
+echo "About to change into $PBS_O_WORKDIR"
+cd $PBS_O_WORKDIR            # Change into directory where job was submitted from
+echo "About to start Julia"
+julia ex1_serial.jl
+echo "Julia exited"
+date
+

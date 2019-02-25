@@ -1,0 +1,28 @@
+#!/bin/bash
+#PBS -A open                 ## Submit job to "Open" allocation
+##PBS -A cyberlamp_class     ## These 2 lines are commented out and will have no effect
+##PBS -l qos=cl_class        ##   but could replace -A open to request using CyberLAMP
+##PBS -l qos=cl_debug        ## TODO: Check if students have access to cl_debug
+#PBS -l walltime=00:15:00    ## Time requested: 0 hours, 15 minutes, 0 seconds
+#PBS -l nodes=4:ppn=1        ## Ask for 4 nodes, each with one core 
+                             ##  (you may be assigned multiple cores on the same node)
+#PBS -l pmem=1gb             ## Each processor will use no more than 1GB of RAM
+#PBS -j oe                   ## combine STDOUT and STDERR into one file
+#PBS -m abe                  ## Ask for emails when jobs begins, ends or aborts
+#PBS -M nobody@psu.edu       ## replace with your email
+#PBS -N Ast528Lab6Ex2        ## Specifices job name, so easy to find in qstat
+
+echo "Starting job $PBS_JOBNAME"
+date
+echo "Job id: $PBS_JOBID"
+echo "Was assigned the following nodes"
+cat $PBS_NODEFILE
+
+echo "About to change into $PBS_O_WORKDIR"
+cd $PBS_O_WORKDIR            # Change into directory where job was submitted from
+echo "About to start Julia specifying list of assigned nodes"
+#julia --machine-file $PBS_NODEFILE -e 'import Pkg; using Distributed; @everywhere Pkg.activate("."); using NBInclude; @nbinclude("ex2.ipynb")'
+julia --machine-file $PBS_NODEFILE ex2_run_nb.jl
+echo "Julia exited"
+date
+
