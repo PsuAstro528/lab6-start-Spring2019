@@ -56,7 +56,24 @@ If any of your attempts don't work, then fix the issue, try again.  Once you get
  ```sh
  qsub ex1_parallel.pbs
  ```
-Check on the job status, and once it's finished inspect the output, and make sure it did what you expected.  Then use git to add, commit and push it to your GitHub repository.
+Check on the job status, and once it's finished inspect the output, and make sure it did what you expected.  
+
+If got an error message relaed to your SSH keys not being authorized, then try running the following commands on the ACI system.  
+```sh
+# Authorize for this location (home is shared on the compute nodes)
+cp ~/.ssh/authorized_keys ~/.ssh/authorized_keys.replaced
+cp ~/.ssh/id_rsa.pub ~/.ssh/authorized_keys
+
+# Setting up the host key checking...
+echo "StrictHostKeyChecking no" > ~/.ssh/config
+
+# Correct the permissions
+chmod 444 ~/.ssh/config
+chmod 700 ~/.ssh
+```
+Hopefully, that will fix the problem.  If not, let me know and I'll update [this page](https://psuastro528.github.io/tips/julia_parallel_on_aci/) as I figure out more tweaks that may be necessary to make it work for everyone.
+
+Once the parallel job runs successfully, use git to add, commit and push it to your GitHub repository.
 And if it's taking a while to start, then you can skip ahead to step 8 (and come back to finish this step later after your parallel job has completed).
 
 ### Submitting & Running a Job Array
