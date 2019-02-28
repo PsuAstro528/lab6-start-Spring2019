@@ -1,17 +1,25 @@
 #!/bin/bash
-#PBS -A open                 ## Submit job to "Open" allocation
-##PBS -A cyberlamp     ## These 2 lines are commented out and will have no effect
-##PBS -l qos=cl_class        ##   but could replace -A open to request using CyberLAMP
-##PBS -l qos=cl_debug         ## TODO: Check if students have access to cl_debug
-#PBS -l walltime=00:05:00    ## Time requested: 0 hours, 5 minutes, 0 seconds
-#PBS -l nodes=1:ppn=1        ## Ask for one core on one node
-#PBS -l pmem=1gb             ## Each processors will use no more than 1GB of RAM
-#PBS -j oe                   ## combine STDOUT and STDERR into one file
-#PBS -m abe                  ## Ask for emails when jobs begins, ends or aborts
-#PBS -M nobody@psu.edu       ## replace with your email
-#PBS -N Ast528Lab6Ex1        ## Specifices job name, so easy to find in qstat
-#PBS -t 1-10%6               ## Submit a job array with 10 jobs, but
-                             ## limit to 6 jobs running at once
+## Submit job to "Open" allocation if next line begins #PBS
+##PBS -A open                 
+## Alternatively, comment out line above (with ##...) and uncomment 2 lines below (i.e., just 1 #) to use CyberLAMP
+#PBS -A cyberlamp_class     
+#PBS -l qos=cl_class        
+## Time requested: 0 hours, 5 minutes, 0 seconds
+#PBS -l walltime=00:05:00    
+## Ask for one core on one node
+#PBS -l nodes=1:ppn=1        
+## Each processors will use no more than 1GB of RAM
+#PBS -l pmem=1gb             
+## combine STDOUT and STDERR into one file
+#PBS -j oe                   
+## Ask for emails when jobs begins, ends or aborts
+#PBS -m abe                  
+## replace with your email
+#PBS -M nobody@psu.edu       
+## Specifices job name, so easy to find in qstat
+#PBS -N Ast528Lab6Ex1        
+## Submit a job array with 10 jobs, but limit to 6 jobs running at once
+#PBS -t 1-10%6               
 
 echo "Starting job $PBS_JOBNAME"
 date
