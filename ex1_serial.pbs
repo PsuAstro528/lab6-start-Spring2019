@@ -1,9 +1,9 @@
 #!/bin/bash
 ## Submit job to "Open" allocation
-##PBS -A open                 
-## Alternatively could comment out line above and uncomment two lines below to use CyberLAMP
-#PBS -A cyberlamp_class     
-#PBS -l qos=cl_class        
+#PBS -A open                 
+## Alternatively could comment out line above and uncomment two lines below (by removing one # on each line) to use CyberLAMP
+##PBS -A cyberlamp_class     
+##PBS -l qos=cl_class        
 ## TODO: Check if students have access to cl_debug
 ##PBS -l qos=cl_debug        
 ## Time requested: 0 hours, 5 minutes, 0 seconds
@@ -14,12 +14,12 @@
 #PBS -l pmem=1gb             
 ## combine STDOUT and STDERR into one file
 #PBS -j oe                   
-## Ask for emails when jobs begins, ends or aborts
-#PBS -m abe                  
-## replace with your email
-#PBS -M nobody@psu.edu       
 ## Specificy job name, so easy to find in qstat
 #PBS -N Ast528Lab6Ex1        
+## Uncomment next two PBS commands (by removing one of #'s in each line) and replace with your email if you want to be notifed when jobs start and stop
+##PBS -M YOUR_EMAIL_HERE@psu.edu       
+## Ask for emails when jobs begins, ends or aborts
+##PBS -m abe                  
 
 echo "Starting job $PBS_JOBNAME"
 date

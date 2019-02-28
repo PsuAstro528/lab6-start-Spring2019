@@ -14,12 +14,12 @@
 #PBS -l pmem=1gb             
 ## combine STDOUT and STDERR into one file
 #PBS -j oe                   
-## Ask for emails when jobs begins, ends or aborts
-#PBS -m abe                  
-## replace with your email
-#PBS -M nobody@psu.edu       
 ## Specifices job name, so easy to find in qstat
 #PBS -N Ast528Lab6Ex2        
+## Uncomment next two PBS commands (by removing one # on each line) and replace with your email if you want to be notified when jobs start and stop
+##PBS -M nobody@psu.edu       
+## Ask for emails when jobs begins, ends or aborts
+##PBS -m abe                  
 
 echo "Starting job $PBS_JOBNAME"
 date
