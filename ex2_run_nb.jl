@@ -1,3 +1,7 @@
+# First, make sure that all package cahces are up-to-date on master process
+import Pkg
+Pkg.activate(".")
+# Now make sure tha all workers have access to packages
 using Distributed
 @everywhere import Pkg
 @everywhere Pkg.activate(".")

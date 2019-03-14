@@ -1,0 +1,215 @@
+
+# Astro 528, Lab 6, Exercise 2
+## Parallelization for Cluster using Distributed-Memory Model
+
+In this lab exercise, we'll perform the same calculations as in exercise 2 of lab 5.  However, instead of using a multi-core workstation, we will [run the calculations on the ICS ACI-B cluster](https://ics.psu.edu/computing-services/ics-aci-user-guide/#07-00-running-jobs-on-aci-b) using a distributed memory model.  
+
+You're welcome to run this notebook one cell at a time as in other labs to see how it works.  However, the main point of this lab is to see how to run such a calculation in parallel over multiple processor cores that are not necessarily on the same processor.  Therefore, you'll use the [command line interface](https://ics.psu.edu/computing-services/ics-aci-user-guide/#05-00-basics-aci-resources) to submit the jobs [ex2.pbs](https://github.com/PsuAstro528/lab6-start/blob/master/ex2.pbs).  Follow the instructions in the [lab's README](https://github.com/PsuAstro528/lab6-start/blob/master/README.md)
+
+First, make sure you have the necessary packages installed.
+
+```julia
+using Pkg
+Pkg.activate(".")
+# Shouldn't need to instantiate the project, since 
+# you'll have already run as part of exercise 1.
+# Pkg.instantiate()
+```
+
+Remember, packages are installed to disk, so you only want to run `instantiate` on the master node.
+
+### Getting setup for parallel computation
+
+We'll load the CSV and DataFrames packages that only need to be loaded by the master process.
+Then we'll load Julia's `Distributed` module that provides much of the needed functionality.
+
+```julia
+using CSV, DataFrames
+using Distributed
+println("# Julia is using ", nworkers(), " workers.")
+```
+
+```julia
+# Uncomments the line below, if you're running manually in a notebook and
+# want to test with multiple processors.
+# addprocs(4); println("# Now Julia is using ", nworkers(), " workers.")
+```
+
+### Make sure package cache's are up-to-date
+
+If the code for a package has been updated more recently than Julia pre-compiled the package, then Julia will need o recompile that package.  To save time in the future, Julia will save the compiled code in a "cache", so it can be reused.  We don't want multiple workers trying to compile the packages at the same time and overwriting each others' work.  In order to make sure that any packages we'll load on worker processes have already been pre-compiled, we'll first `using` them on  the master node.
+
+```julia
+using Distributions
+using DistributedArrays
+```
+### Loading Packages and modules
+
+Now, we can start loading other packages that we'll be using onto the worker nodes.  Since we want the packages to be in scope on each worker, then we need to add the @everywhere macro in front of the using statement.  Before we can do that we need to activate the project on each of the workers, so they know that they can use the packages in Project.toml.  We don't need to install or instantiate on each worker, since those write files to disk and all the workers have access to the same filesystem.
+
+```julia
+@everywhere using Pkg
+@everywhere Pkg.activate(".")
+```
+
+```julia
+@everywhere using Distributions
+@everywhere using DistributedArrays
+```
+
+For this lab, I've written several functions that will be used to generate simulated spectra.  This serves a couple of purposes.
+First, you'll use the code in the exercise, so you have a calculation that's big enough to be worth parallelizing.  For the purposes of this exercise, it's not essential that you review the code I provided in `.jl` files.  However, the second purpose of providing this is to demonstrate several of the programming patterns that we've discussed in class.  For example, the code in the `ModelSpectrum` module
+- is in the form of several small functions, each which does one specific task.  
+- has been moved out of the Jupyter notebook and into `.jl` files in the `src` directory.
+- creates objects to represent spectra and a convolution kernel.
+- uses [abstract types](https://docs.julialang.org/en/v1/manual/types/#Abstract-Types-1) and [parametric types](https://docs.julialang.org/en/v1/manual/types/#Parametric-Types-1), so as to create type-stable functions. 
+- has been  put into a Julia [module](https://docs.julialang.org/en/v1/manual/modules/index.html), so that it can be easily loaded and so as to limit potential for namespace conflicts.
+
+You don't need to read all of this code right now.  But, when you're writing code for your class project, you're likely to want to make use of some of these same programming patterns. So, it may be useful to refer back to this code later to help see examples of how to apply these design patterns in practice.  
+        
+For now, let's include just the file that has the code for the `ModelSpectrum` module.  `src/ModelSpectrum.jl` includes the code from the other files, `spectrum.jl` and `convolution_kernels.jl`.  We'll preface it with `@everywhere`, since we want all of the processors to be able to make use of these function and types.
+
+```julia
+@everywhere include("src/ModelSpectrum.jl")
+```
+
+Now, we'll bring that module into scope.  Note that since this is not a package, we need to include a `.` to tell Julia that it can the module in the current namespace, rather than needing to load a package.
+
+```julia
+using .ModelSpectrum
+```
+
+### Initialize data to be analyzed
+In this exercise, we're going to create a model spectrum consisting of continuum, stellar absorption lines, telluric absorption lines.  
+The `ModelSpectrum` module provides a `SimulatedSpectrum` type, but we'll need to initialize a variable with some specific parameter values.  The function does that for us.
+
+```julia
+"Create an object that provides a model for the raw spetrum (i.e., before entering the telescope)"
+function make_spectrum_object(;lambda_min = 4500, lambda_max = 7500, flux_scale = 1.0,
+        num_star_lines = 200, num_telluric_lines = 100, limit_line_effect = 10.0)
+
+    continuum_param = flux_scale .* [1.0, 1e-5, -2e-8]
+    
+    star_line_locs = rand(Uniform(lambda_min,lambda_max),num_star_lines)
+    star_line_widths = fill(1.0,num_star_lines)
+    star_line_depths = rand(Uniform(0,1.0),num_star_lines)
+    
+    telluric_line_locs = rand(Uniform(lambda_min,lambda_max),num_telluric_lines)
+    telluric_line_widths = fill(0.2,num_telluric_lines)
+    telluric_line_depths = rand(Uniform(0,0.4),num_telluric_lines)
+
+    SimulatedSpectrum(star_line_locs,star_line_widths,star_line_depths,telluric_line_locs,telluric_line_widths,telluric_line_depths,continuum_param=continuum_param,lambda_mid=0.5*(lambda_min+lambda_max),limit_line_effect=limit_line_effect)
+end
+```
+
+Next, we: 
+1. create a set of wavelengths to observe the spectrum at, 
+2. call the function above to create a spectrum object, 
+3. create an object containing a model for the point spread function, and 
+4. create an object that can compute the convolution of our spectral model with the point spread function model.
+
+```julia
+# 1.  Pick range of of wavelength to work on.
+lambda_min = 4500
+lambda_max = 7500
+# You may want to adjust the num_lambda to make things more/less computationally intensive
+num_lambda = 128*1024
+lambdas = collect(range(lambda_min,stop=lambda_max, length=num_lambda));
+
+# 2.  Create a model  spectrum that we'll analyze below
+raw_spectrum = make_spectrum_object(lambda_min=lambda_min,lambda_max=lambda_max)
+
+# 3.  Create a model for the point spread function (PSF)
+psf_widths  = [0.5, 1.0, 2.0]
+psf_weights = [0.8, 0.15, 0.05]
+psf_model = GaussianMixtureConvolutionKernel(psf_widths,psf_weights)
+
+# 4. Create a model for the the convolution of thte raw spectrum with the PDF model
+conv_spectrum = ConvolvedSpectrum(raw_spectrum,psf_model)
+```
+
+### Benchmarking serial code
+
+*If the current job has just one worker process,* then we'll benchmark the calculation of this spectrum on a single processor.  Based on performance results from lab 5, we'll make use of Julia's [dot syntax](https://docs.julialang.org/en/v1/manual/functions/#man-vectorized-1) to ["broadcast" and "fuse"](https://docs.julialang.org/en/v1/base/arrays/#Broadcast-and-vectorization-1) the array operation.    We'll run it just a few times (rather than using `@btime`).
+Since the rest of the notebook is meant for distributed computing, we'll tell it to exit here if there's only a single worker.  Before we do, we'll flush the buffer, so any messages are written to `STDOUT` before the kernel exits.|
+
+```julia
+num_runs = 3
+if nworkers() == 1    
+    for i in 1:num_runs @time conv_spectrum.(lambdas); end
+    flush(stdout) # flush buffer before the kernel exits
+    sleep(1)      # wait for one second just to make sure
+    exit(0)       # Exit the script since completed serial calculation
+end
+```
+
+If you're running this in a Jupyter notebook and got a message about the kernel dieing, don't worry.  We used the `exit` command to cause the julia kernel to exit.  If you're in the notebook server and want to keep going, then you can rerun the previous cells above, and either add some processors (e.g., `addprocs(4)`) 
+
+### Distributed Arrays
+Here, we want to spread the work over processor cores than are not necessarily on the same node, so we need to use a [distributed memory system](https://en.wikipedia.org/wiki/Distributed_memory).  This would be necessary if you wanted your job to run on more cores than are available on a single node.  It could also be useful if you wanted to increase the chances that the scheduler starts your job more quickly, since asking for several processors cores that don't need to be on the same node is easier to accommodate than asking for the same number of cores on a single node.  Here we'll use Julia's [DistributedArrays.jl](https://juliaparallel.github.io/DistributedArrays.jl/latest/index.html) package to make programming for distributed memory systems relatively easy.  
+
+Here we'll create a distributed array by simply applying `distribute` to our existing array of wavelengths.  (Remember that we could initialize a `DArray` more efficiently be letting each workers initializes its own data.  For convenience functions like `dzeros`, `dones`, `drand`, `drandn` and `dfill` act similarly to their counterparts without a `d` prefix, but create DArrays instead of regular Arrays.) 
+
+```julia
+lambdas_dist = distribute(lambdas);
+```
+
+As usual, the first time we call a function, it takes some extra time and memory to compile it.  So let's do that again, this time benchmarking the `distribute` operation.
+
+```julia
+println("# Timing calls to distribute.")
+@time lambdas_dist = distribute(lambdas);
+```
+
+Below we will apply `map` to a `lambda_dist`, which is a `DArray`.  `map` will parallelize the calculation and return the results in a `DArray`.  Each worker operates on the subset of the array that is local to that worker process.  We will call `collect` the data in order to copy all the data back to to the master process.  
+
+```julia
+println("# Timing calls to map(...).")
+for i in 1:num_runs 
+    @time map(conv_spectrum,lambdas_dist) 
+end
+
+println("# Timing calls to collect(map(...)).")
+for i in 1:num_runs 
+    @time collect(map(conv_spectrum,lambdas_dist)) 
+end
+```
+
+Copying all that data back for the master process to access added a significant amount to the total time.
+Sometimes you don't actually need to bring all the data back to the master process.  For example, you might have several calculations that can be done, each leaving the data distributed across many workers, until the very end.
+Another common scenario is that you want to performing a task that can be phrased as a [`mapreduce`](https://en.wikipedia.org/wiki/MapReduce) programming pattern.  For example, imagine that we only wanted to compute the total flux over a filter band.  Then we could use code like the following to reduce the amount of communications overhead.
+
+```julia
+# Send the value lambda_min to each of the workers
+for p in workers() remotecall_fetch(()->lambda_min, p); end
+
+# Define a function on each of the workers
+@everywhere is_in_filter_band(x) = (lambda_min < x < lambda_min+100) ? one(x) : zero(x)
+
+# Run mapreduce, summing the product of the convolved spectrum and the filter's weight at each wavelength
+mapreduce(x->is_in_filter_band(x)*conv_spectrum(x), +, lambdas_dist);
+```
+
+```julia
+println("# Timing calls to mapreduce.")
+for i in 1:num_runs 
+    @time mapreduce(x->is_in_filter_band(x)*conv_spectrum(x), +, lambdas_dist) 
+end
+```
+
+### Write output (without interfering with output from other jobs)
+Below, we'll demonstrate how to write the results to a file, making sure that different jobs don't overwrite each other
+
+```julia
+results = collect(map(conv_spectrum,lambdas_dist)) 
+
+output_filename = "ex2_out.csv"
+if haskey(ENV,"PBS_JOBID")         # see if PBS_JOBID is among environment variables
+  m = match(r"^(\d+\[?\d*\]?)\.",ENV["PBS_JOBID"])  # 
+  if m != nothing               
+      jobid_num = m.captures[1]
+      output_filename = "ex2_out_" * jobid_num * ".csv"
+  end
+end
+CSV.write(output_filename,DataFrame(lambda=lambdas,result=results))
+```
